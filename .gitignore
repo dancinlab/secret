@@ -1,0 +1,11 @@
+# never let local secret state into the repo
+*.token
+*.key
+*.pem
+*.p12
+*.env
+.env*
+credentials
+credentials.*
+secrets/
+.cache/
