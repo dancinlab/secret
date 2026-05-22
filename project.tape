@@ -2,39 +2,35 @@
   version = "1.2"
 
 @I := "secret" :: identity [active]
-  kind    = "macOS Keychain-backed credential CLI (bash · zero deps · dual-channel sync · 🔐)"
-  brief   = "secret get/set/delete/list via `security` CLI · service-namespaced · two independent sync channels usable in any combination: (a) iCloud Drive — primary file lives in iCloud Drive, file-level sync; (b) GitHub mirror — encrypted blob mirrored to a private git repo, optional auto-push. Both backends share the SAME master-password-encrypted keychain file (no extra crypto layer)."
-  parent  = "dancinlab"
-  ssot    = "github.com/dancinlab/secret"
-  scripts = "bin/secret — single CLI entry point. verbs: get/set/rotate/check/list/delete/service + admin verbs init [icloud|github <url>] · backup [enable <url>|disable|status|<empty>] · sync · migrate"
-  mirror  = "github.com/dancinlife/secret (private · encrypted keychain blob · `secret backup enable` target)"
+  kind   = "macOS Keychain-backed credential CLI (bash · zero deps · dual-channel sync · 🔐)"
+  brief  = "Keychain credential CLI · service-namespaced · dual sync (iCloud Drive file + private GitHub mirror)"
+  parent = "dancinlab"
+  ssot   = "github.com/dancinlab/secret"
 
-@D s1 := "Keychain is the SSOT — never write secrets to plaintext files" :: governance [required active]
-  do   = "all secret storage flows through `security add-generic-password` / `find-generic-password` · `$SECRET_SERVICE` namespaces the entries (default `dancinlab.secret`) · entries live in the dedicated keychain at `$SECRET_KEYCHAIN` (symlink → primary file location set by `secret init`). Mirror copies (in `$HOME/.local/share/secret-archive/` etc.) are byte-for-byte copies of the encrypted blob — NOT separate plaintext exports"
-  dont = "write secrets to local files / repo files (cards.json · *.token · .env in repo) · echo a fetched secret into shell history · cache plaintext outside the user's Keychain · co-mingle with the login keychain (the dedicated keychain is isolated by design — login keychain unlock ≠ secret keychain unlock) · introduce a plaintext export path for the mirror (the encrypted file IS the backup format)"
+@D s1 := "Keychain is the SSOT — no plaintext secret files" :: governance [required active]
+  do   = "all secret storage via `security add/find-generic-password` · `$SECRET_SERVICE`-namespaced · dedicated `$SECRET_KEYCHAIN`"
+  dont = "write secrets to repo / local files · echo into shell history · cache plaintext outside Keychain · co-mingle with login keychain"
 
 @D s2 := "macOS-only — fail fast on other OS" :: governance [required active]
-  do   = "rely on the macOS-built-in `security` CLI; sync channels: (a) iCloud Drive does file-level sync of the dedicated keychain between Macs — file-level, not iCloud-Keychain-item-level (the latter requires Apple Developer entitlements unavailable to a bash CLI); (b) GitHub mirror via `git` clone + push of the same encrypted blob"
-  dont = "add Linux/Windows fallback paths inside this CLI (cross-platform users should use 1Password CLI `op` or Bitwarden CLI `bw`) · silently degrade to file storage on non-mac · try to set `kSecAttrSynchronizable=true` from this CLI (it returns errSecMissingEntitlement -34018 without a provisioning profile — keep the file-level approach instead)"
+  do   = "rely on the macOS `security` CLI · sync via iCloud Drive file-level + GitHub encrypted-blob mirror"
+  dont = "Linux / Windows fallback paths in this CLI · degrade to file storage on non-mac · set kSecAttrSynchronizable (needs entitlement)"
 
-@D s3 := "high-value secrets — refuse by default, require explicit override + stdin/tty" :: governance [required active]
-  do   = "auto-detect wallet-grade secrets on `set` (BIP39 12/15/18/21/24-word validated against bundled wordlist · xprv/xpub/yprv/ypub/zprv/zpub · WIF · 64-hex privkey) and REFUSE by default; override requires BOTH `--allow-mnemonic` flag AND stdin/tty input (pipe or hidden prompt)"
-  dont = "accept high-value value via argv even with `--allow-mnemonic` (process-listing `ps aux` leak) · auto-promote argv input · silently store wallet seeds without the explicit-override + stdin/tty combo"
+@D s3 := "high-value secrets — refuse by default" :: governance [required active]
+  do   = "auto-detect wallet-grade secrets on `set` (BIP39 · xprv / WIF · 64-hex) and REFUSE — override = `--allow-mnemonic` + stdin/tty"
+  dont = "accept a high-value value via argv (`ps aux` leak) · auto-promote argv · store wallet seeds without override + stdin/tty"
 
-@D s4 := "rotate emits sentinel only — never echo the generated value" :: governance [required active]
-  do   = "`secret rotate <key>` generates `/dev/urandom` (base64 / hex), stores via `security`, emits only a sentinel line (`rotated: <key> (mode=..., n=...)`) — the new value is read separately via `secret get <key>` (process-lifetime ephemeral)"
-  dont = "print the rotated value to stdout / stderr / log · pass it as argv to a downstream command · skip the sentinel (silent rotate masks operator intent)"
+@D s4 := "rotate emits a sentinel only" :: governance [required active]
+  do   = "`secret rotate` generates via /dev/urandom, stores via `security`, emits a sentinel line only"
+  dont = "print the rotated value to stdout / stderr / log · pass it as downstream argv · skip the sentinel"
 
-@D s5 := "master password is the trust root — Apple ID compromise alone does NOT expose secrets" :: governance [required active]
-  do   = "treat the user-chosen master password as the SOLE decryption secret · choose a strong unique master password independent of Apple ID / login passwords · enable Apple Advanced Data Protection (ADP) if available for defense in depth (encrypts the file blob in iCloud as well) · document that losing the master password means losing all entries (no Apple-side recovery)"
-  dont = "store the master password in any synced location (iCloud Drive · iCloud Keychain · Notes) · reuse the macOS login password as the master password (defeats the iCloud-Drive-vs-Apple-ID-only-compromise separation) · add an Apple-ID-derived fallback unlock path (would re-couple the trust root to Apple ID)"
+@D s5 := "master password is the trust root" :: governance [required active]
+  do   = "master password = SOLE decryption secret · strong + unique, independent of Apple ID · enable ADP for defense-in-depth"
+  dont = "store the master password in any synced location · reuse the login password · add an Apple-ID-derived fallback unlock"
 
-@D s6 := "migration / cross-keychain tools MUST pin source AND destination via explicit keychain paths — never the default user search list" :: governance [required active]
-  do   = "every `security <verb> ... <keychain-path>` invocation inside `secret migrate` (and any future copy/sync helper) MUST pass the explicit source path (`~/Library/Keychains/login.keychain-db`) for enumerate / read / purge, and `$SECRET_KEYCHAIN` for dest write / verify · add a pre-flight assertion that resolved-source ≠ resolved-destination · log both paths in the migrate banner so the operator can sanity-check before --apply"
-  dont = "rely on the implicit default keychain or user search list (`security dump-keychain`, `security delete-generic-password -a … -s …` with no trailing path) inside a copy loop — once `secret init` adds the destination keychain to the user search list, the same loop will enumerate BOTH source and destination, purge source on pass-1, then purge destination on pass-2 → total data loss"
-  why  = "2026-05-22 incident: `secret migrate --apply --purge-source` after `secret init` had added the iCloud-Drive keychain to the user search list. dump-keychain saw 126 entries (63 × 2), the purge loop's pathless `delete-generic-password` removed login on its first sweep over each key and the iCloud destination on the second sweep. Both keychains ended empty. Recovered from the orthogonal TOML backup at `~/core/self-secret/credentials` (which held the same 63 keys 1:1). Without that backup BIP39 wallet seeds and YubiKey PIV credentials would have been irrecoverable."
+@D s6 := "migration tools pin explicit keychain paths" :: governance [required active]
+  do   = "`secret migrate` / copy helpers pin explicit source + dest keychain paths · assert source ≠ dest · log both in the banner"
+  dont = "use the implicit default keychain / user search list in a copy loop — enumerates source + dest → purges both → data loss"
 
-@D s7 := "GitHub mirror = same encrypted file, no extra crypto layer; auto-push is ON by default" :: governance [required active]
-  do   = "`secret backup` / `secret sync` / auto-mode push the keychain blob AS-IS (it's already encrypted at rest with the master password — the file format IS the cipher) to a PRIVATE git repo. Auto-push is ON BY DEFAULT whenever a mirror is configured — set/rotate/delete commit+push synchronously after every modify (no env-var flag needed). Push failures degrade gracefully (warning only, local write still succeeds). Keep the mirror repo PRIVATE. Disable keychain auto-lock at init time (`security set-keychain-settings <kc>` with no flags) so reads/writes don't trigger master-password popups every 5 min"
-  dont = "make the mirror repo public (a private master password is the only thing between attacker-with-blob and full secret disclosure — public exposure shifts the threat model to offline brute-force) · add a parallel plaintext-export path (defeats the whole point of pushing the encrypted blob) · gate auto-push behind a `SECRET_BACKUP_AUTO=1` opt-in (the user explicitly wanted it forced ON; the env var now serves only as a per-invocation opt-OUT via `=0`) · let `set-keychain-settings` use defaults (300s timeout + lock-on-sleep would surface the popup the user explicitly wanted gone)"
-  why  = "2026-05-22: (a) the macOS Keychain Access master-password popup ('security이(가) <kc> 키체인을 사용하고자 합니다') was misread as an iCloud-permission problem — actual cause was default keychain settings (300s idle timeout + sleep-lock); fix is `security set-keychain-settings <kc>` (no -l/-u/-t flags). The setting lives IN the keychain file → propagates via either sync channel. (b) Auto-push was originally gated by `SECRET_BACKUP_AUTO=1` opt-in. User feedback that night: enforce auto-push from code, not env. Default flipped to ON; env var kept only as `=0` opt-out."
+@D s7 := "GitHub mirror = same encrypted blob, auto-push ON" :: governance [required active]
+  do   = "`backup` / `sync` push the encrypted blob AS-IS to a PRIVATE git repo · auto-push ON by default · disable keychain auto-lock at init"
+  dont = "public mirror repo · parallel plaintext-export path · gate auto-push behind an opt-in env var · leave keychain auto-lock at defaults"
