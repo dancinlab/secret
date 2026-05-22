@@ -1,18 +1,21 @@
 # 🔐 secret
 
-macOS Keychain-backed credential CLI. Single bash script, zero dependencies (uses the system `security` CLI).
+macOS Keychain-backed credential CLI. Bash, zero dependencies (uses the system `security` CLI). Entries live in a dedicated keychain file synced between Macs via **iCloud Drive** (file-level sync), unlocked by a user-chosen master password independent of Apple ID.
 
 ## Install
 
-```
-hx install secret
-```
-
-Or clone + symlink:
+Clone + symlink:
 
 ```
 git clone https://github.com/dancinlab/secret ~/core/secret
 ln -s ~/core/secret/bin/secret ~/.local/bin/secret    # ensure ~/.local/bin is on PATH
+```
+
+Then bootstrap the iCloud-synced keychain (once per device):
+
+```
+secret init
+# Prompts twice for a master password. Use the SAME master password on every device.
 ```
 
 ## Use
@@ -103,18 +106,43 @@ A trap restores `stty echo` on `EXIT`, `INT`, `TERM` — interrupting a hidden p
 
 | | |
 |---|---|
-| Backend | **macOS Keychain** via `security` CLI |
-| Service | `$SECRET_SERVICE` (default: `dancinlab.secret`) |
-| Item key | the `<key>` argument |
-| Multi-device | **iCloud Keychain** syncs entries across the user's Apple devices automatically |
-| Encryption | system Keychain (per-user, AES-256, hardware-bound on Apple Silicon) |
+| Backend       | **macOS Keychain** via `security` CLI |
+| Service       | `$SECRET_SERVICE` (default: `dancinlab.secret`) |
+| Item key      | the `<key>` argument |
+| Keychain file | `$SECRET_KEYCHAIN` (default: `~/Library/Keychains/dancinlab.keychain-db`, a symlink into iCloud Drive) |
+| Multi-device  | iCloud Drive syncs the keychain **file** between Macs; each device unlocks with the same user-chosen master password |
+| Encryption    | macOS Keychain format (per-keychain master password, AES-256) |
+
+## Multi-device setup
+
+Each new Mac needs the same one-time bootstrap:
+
+```
+secret init
+```
+
+It detects whether the keychain file already exists in iCloud Drive (synced from a previous device) and either re-uses it (symlink only) or creates a fresh one (prompts for master password). Use the SAME master password on every device.
+
+Why this approach over `kSecAttrSynchronizable` / iCloud Keychain item sync? Apple specifically blocks programmatic iCloud Keychain access from CLI tools without a provisioning profile — `SecItemAdd` with `kSecAttrSynchronizable=true` returns `errSecMissingEntitlement` (`-34018`). iCloud Drive file-level sync sidesteps that by syncing the encrypted keychain blob via iCloud Drive instead. Apple's servers see only the encrypted bytes; the master password (separate from Apple ID) is required to decrypt.
 
 ## Why Keychain over files
 
-- Encrypted at rest (Keychain is system-managed, not plaintext on disk)
-- iCloud Keychain = automatic multi-device sync without extra setup
+- Encrypted at rest (Keychain is system-managed; the file is an encrypted SQLite blob)
+- iCloud Drive sync of one self-contained file = automatic multi-device sync once bootstrapped
 - `security` CLI is built into macOS — no extra install
-- Per-user namespace (each operator has their own Keychain)
+- Master password independent of Apple ID — Apple ID compromise alone does not expose secrets
+
+## Migrating from a previous install
+
+If you used `secret` before the iCloud-Drive-synced layout (entries lived in the default login keychain), copy them into the dedicated keychain with:
+
+```
+secret migrate                             # dry-run (read-only — shows what would copy)
+secret migrate --apply                     # actually copy
+secret migrate --apply --purge-source      # then delete originals from login keychain
+```
+
+`secret migrate` reads each entry from the default keychain, writes it to `$SECRET_KEYCHAIN`, and verifies the round-trip before reporting `ok`. Use `--purge-source` only after the verified copies look correct.
 
 ## Namespacing
 
