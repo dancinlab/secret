@@ -25,7 +25,9 @@ Optionally layer a GitHub mirror on top of the iCloud-primary setup:
 ```
 secret backup enable https://github.com/<owner>/<repo>.git
 secret backup                                  # initial push
-SECRET_BACKUP_AUTO=1                            # export in shell rc for auto-push
+# Auto-push is ON by default — every subsequent set/rotate/delete commits+pushes.
+# Opt out for a single call:  SECRET_BACKUP_AUTO=0 secret set ...
+# Permanent opt-out:           secret backup disable
 ```
 
 ## Use
@@ -140,10 +142,12 @@ secret backup enable https://github.com/<owner>/<repo>.git [<local-path>]
 secret backup                          # manual push
 secret backup status                   # show config + state
 secret backup disable                  # stop mirroring (clone kept)
-
-SECRET_BACKUP_AUTO=1 secret set …      # auto commit + push after every modify
 ```
 Default local clone: `~/.local/share/secret-archive/`. The mirror file is a byte-for-byte copy of the same encrypted blob — same master password unlocks it. Use the mirror as a recovery channel if iCloud Drive deletion / corruption / sync conflict happens. The repo MUST be private.
+
+**Auto-push is ON by default** once a mirror is configured. Every `secret set` / `rotate` / `delete` synchronously commits + pushes. Push failures print a warning but never block the local write — run `secret sync` later to catch up.
+- Opt out for a single call: `SECRET_BACKUP_AUTO=0 secret set …`
+- Permanent opt-out: `secret backup disable` (removes the mirror config; clone is preserved)
 
 ### Cross-device restore via mirror
 On a new Mac, after `secret init icloud` (or `init github`) doesn't have the file yet:
