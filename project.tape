@@ -2,10 +2,11 @@
   version = "1.2"
 
 @I := "secret" :: identity [active]
-  kind   = "macOS Keychain-backed credential CLI (bash · zero deps · dual-channel sync · 🔐)"
-  brief  = "Keychain credential CLI · service-namespaced · dual sync (iCloud Drive file + private GitHub mirror)"
-  parent = "dancinlab"
-  ssot   = "github.com/dancinlab/secret"
+  kind     = "macOS Keychain-backed credential CLI (bash · zero deps · dual-channel sync · 🔐)"
+  brief    = "Keychain credential CLI · service-namespaced · dual sync (iCloud Drive file + private GitHub mirror)"
+  parent   = "dancinlab"
+  ssot     = "github.com/dancinlab/secret"
+  siblings = "hexa-lang"
 
 @D s1 := "Keychain is the SSOT — no plaintext secret files" :: governance [required active]
   do   = "all secret storage via `security add/find-generic-password` · `$SECRET_SERVICE`-namespaced · dedicated `$SECRET_KEYCHAIN`"
