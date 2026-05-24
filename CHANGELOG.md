@@ -6,6 +6,12 @@ For the full audit trail, see `git log`.
 
 ---
 
+## 2026-05-25
+
+- **0.4.1 — 64-hex 하드 거부 완화 (경고로 강등)** — `set`에서 모든 64자리 hex 값을 "지갑급 개인키"로 오인해 거부하던 false positive 수정. 64-hex는 SHA-256 다이제스트·R2 secret access key·HMAC 키 등 합법 시크릿이 훨씬 흔해 차단이 부적절했음. 자기식별 가능한 지갑 포맷(BIP39 니모닉·xprv/xpub·WIF)만 하드 거부를 유지하고, 64-hex는 한 줄 경고 후 그대로 저장(argv 허용). R2 secret access key(`sha256(token)` = 64-hex) 저장이 `--allow-mnemonic` 없이 가능해짐.
+
+---
+
 ## 2026-05-22
 
 - **0.4.0 — dual-channel sync** — keychain blob (encrypted at rest with the user-chosen master password) pushed/pulled via two independent channels: iCloud Drive file-level sync + an optional private GitHub mirror, each with its own on/off toggle. Auto-push is ON by default once a channel is enabled — `SECRET_BACKUP_AUTO` becomes an opt-out only.
