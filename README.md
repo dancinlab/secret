@@ -4,12 +4,15 @@ macOS Keychain-backed credential CLI. Bash, zero dependencies (uses the system `
 
 ## Install
 
-Clone + symlink:
+```bash
+# 1. Install hexa-lang (gives you `hexa` + `hx` package manager)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/dancinlab/hexa-lang/main/install.sh)"
 
+# 2. Install secret
+hx install secret
 ```
-git clone https://github.com/dancinlab/secret ~/core/secret
-ln -s ~/core/secret/bin/secret ~/.local/bin/secret    # ensure ~/.local/bin is on PATH
-```
+
+`hx` wires the `secret` shim into `~/.hx/bin/` (must be on PATH).
 
 Then pick a sync channel (one-time per device):
 
