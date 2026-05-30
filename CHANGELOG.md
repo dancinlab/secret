@@ -6,6 +6,10 @@ For the full audit trail, see `git log`.
 
 ---
 
+## 2026-05-30
+
+- **0.5.0 — iCloud Drive 채널 폐기 (github 단일 채널)** — `secret init icloud` 백엔드와 iCloud 관련 코드(`_do_init_icloud`·backend resolver의 iCloud 탐지·init github의 iCloud 마이그레이션 분기·help/README의 iCloud 서술)를 전부 제거. 동기화는 이제 **private git repo 단일 채널**: 키체인 암호화 blob을 git으로만 push/pull 한다. 동기 = Apple ID 불필요·헤드리스/ssh 가능(iCloud TCC·Files & Folders 권한 프롬프트 없음). `secret init icloud` 는 `unknown backend 'icloud' (expected: github)` 로 거부. 기존 git 백엔드·mirror(`backup enable`)·migrate 동작은 무변경. macOS Keychain 저장·마스터 비밀번호 모델도 그대로.
+
 ## 2026-05-25
 
 - **0.4.1 — 64-hex 하드 거부 완화 (경고로 강등)** — `set`에서 모든 64자리 hex 값을 "지갑급 개인키"로 오인해 거부하던 false positive 수정. 64-hex는 SHA-256 다이제스트·R2 secret access key·HMAC 키 등 합법 시크릿이 훨씬 흔해 차단이 부적절했음. 자기식별 가능한 지갑 포맷(BIP39 니모닉·xprv/xpub·WIF)만 하드 거부를 유지하고, 64-hex는 한 줄 경고 후 그대로 저장(argv 허용). R2 secret access key(`sha256(token)` = 64-hex) 저장이 `--allow-mnemonic` 없이 가능해짐.

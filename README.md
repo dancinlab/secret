@@ -1,6 +1,6 @@
 # 🔐 secret
 
-macOS Keychain-backed credential CLI. Bash, zero dependencies (uses the system `security` CLI). Entries live in a dedicated keychain file synced between Macs via **iCloud Drive** (file-level sync), unlocked by a user-chosen master password independent of Apple ID.
+macOS Keychain-backed credential CLI. Bash, zero dependencies (uses the system `security` CLI). Entries live in a dedicated keychain file synced between Macs as an **encrypted blob through a private git repo** — independent of Apple ID, works headless / over ssh (no iCloud / TCC / Files & Folders prompts), unlocked by a user-chosen master password.
 
 ## Install
 
@@ -14,21 +14,18 @@ hx install secret
 
 `hx` wires the `secret` shim into `~/.hx/bin/` (must be on PATH).
 
-Then pick a sync channel (one-time per device):
+Then set up the primary location (one-time per device):
 
 ```
-secret init icloud                                      # primary in iCloud Drive (easy default)
-# or
 secret init github https://github.com/<owner>/<repo>.git  # primary inside a private git checkout
 # (prompts TWICE for the master password — use the SAME one on every device)
 ```
 
-Optionally layer a GitHub mirror on top of the iCloud-primary setup:
+Auto-push is ON by default once the primary is a git checkout — every `set` / `rotate` / `delete` commits + pushes the encrypted blob. Optionally add a second mirror remote:
 
 ```
-secret backup enable https://github.com/<owner>/<repo>.git
+secret backup enable https://github.com/<owner>/<mirror>.git
 secret backup                                  # initial push
-# Auto-push is ON by default — every subsequent set/rotate/delete commits+pushes.
 # Opt out for a single call:  SECRET_BACKUP_AUTO=0 secret set ...
 # Permanent opt-out:           secret backup disable
 ```
@@ -127,51 +124,48 @@ A trap restores `stty echo` on `EXIT`, `INT`, `TERM` — interrupting a hidden p
 | Keychain file | `$SECRET_KEYCHAIN` (default: `~/Library/Keychains/dancinlab.keychain-db`, a symlink to the actual file) |
 | Encryption    | macOS Keychain format — file is encrypted at rest with the user-chosen master password |
 
-The keychain file is **encrypted at rest**. Both sync channels below push/pull that encrypted blob as-is — no second crypto layer required.
+The keychain file is **encrypted at rest**. Git carries that encrypted blob as-is — no second crypto layer required.
 
-## Sync channels (independent, on/off any time)
+## Sync — private git repo
 
-Either, both, or neither can be active:
-
-### iCloud Drive — primary location in iCloud Drive
+### Primary — keychain file inside a git checkout
 ```
-secret init icloud
+secret init github https://github.com/<owner>/<repo>.git
 ```
-File lives at `~/Library/Mobile Documents/com~apple~CloudDocs/Keychains/dancinlab.keychain-db`. iCloud Drive does file-level sync between your Macs. Each device unlocks with the **same master password**.
+File lives inside the checkout (default `~/.local/share/secret/`, `$SECRET_GITHUB_PATH` override). Every `set` / `rotate` / `delete` commits + pushes the encrypted blob. Each device unlocks with the **same master password**. The repo MUST be private.
 
-### GitHub mirror — encrypted blob in a private git repo
+### Optional second mirror
 ```
-secret backup enable https://github.com/<owner>/<repo>.git [<local-path>]
+secret backup enable https://github.com/<owner>/<mirror>.git [<local-path>]
 secret backup                          # manual push
 secret backup status                   # show config + state
 secret backup disable                  # stop mirroring (clone kept)
 ```
-Default local clone: `~/.local/share/secret-archive/`. The mirror file is a byte-for-byte copy of the same encrypted blob — same master password unlocks it. Use the mirror as a recovery channel if iCloud Drive deletion / corruption / sync conflict happens. The repo MUST be private.
+Default local clone: `~/.local/share/secret-archive/`. The mirror file is a byte-for-byte copy of the same encrypted blob — a second recovery channel in case the primary repo is lost.
 
-**Auto-push is ON by default** once a mirror is configured. Every `secret set` / `rotate` / `delete` synchronously commits + pushes. Push failures print a warning but never block the local write — run `secret sync` later to catch up.
+**Auto-push is ON by default** once a git backup target is configured. Push failures print a warning but never block the local write — run `secret sync` later to catch up.
 - Opt out for a single call: `SECRET_BACKUP_AUTO=0 secret set …`
 - Permanent opt-out: `secret backup disable` (removes the mirror config; clone is preserved)
 
-### Cross-device restore via mirror
-On a new Mac, after `secret init icloud` (or `init github`) doesn't have the file yet:
+### Cross-device restore
+On a new Mac, after `secret init github <url>`:
 ```
-secret backup enable <url>
 secret sync                            # git pull --rebase + restore primary
 ```
 
 ### Why not iCloud Keychain item-sync (`kSecAttrSynchronizable=true`)?
-Apple blocks programmatic iCloud Keychain access from unsigned CLI tools — `SecItemAdd` with `kSecAttrSynchronizable=true` returns `errSecMissingEntitlement` (`-34018`) without a provisioning profile. File-level sync (iCloud Drive OR git) sidesteps that constraint entirely.
+Apple blocks programmatic iCloud Keychain access from unsigned CLI tools — `SecItemAdd` with `kSecAttrSynchronizable=true` returns `errSecMissingEntitlement` (`-34018`) without a provisioning profile. File-level sync through git sidesteps that constraint entirely.
 
 ## Why Keychain over files
 
 - Encrypted at rest (`security` CLI manages it; the file is an encrypted blob)
-- One self-contained file = a single artifact to sync via any file-transport channel
+- One self-contained file = a single artifact to sync via git
 - `security` CLI is built into macOS — no extra install
 - Master password independent of Apple ID — neither Apple ID nor GitHub compromise alone exposes secrets
 
 ## Migrating from a previous install
 
-If you used `secret` before the iCloud-Drive-synced layout (entries lived in the default login keychain), copy them into the dedicated keychain with:
+If you used `secret` before the dedicated-keychain layout (entries lived in the default login keychain), copy them into the dedicated keychain with:
 
 ```
 secret migrate                             # dry-run (read-only — shows what would copy)
