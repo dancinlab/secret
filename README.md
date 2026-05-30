@@ -136,7 +136,7 @@ secret backup disable                  # stop mirroring (clone kept)
 ```
 Default local clone: `~/.local/share/secret-archive/`. The mirror is a byte-for-byte copy of the same `store.enc` — a second recovery channel.
 
-**Auto-push is ON by default** once a git target is configured. Push failures print a warning but never block the local write — run `secret sync` later to catch up.
+**Auto-push is ON by default** once a git target is configured. Commit or push failures print a warning (a missing git identity is the usual culprit — `git config --global user.email/user.name`) but never block the local write — run `secret sync` later to catch up.
 - Opt out for a single call: `SECRET_BACKUP_AUTO=0 secret set …`
 - Permanent opt-out: `secret backup disable`
 

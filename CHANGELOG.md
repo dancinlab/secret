@@ -8,7 +8,7 @@ For the full audit trail, see `git log`.
 
 ## 2026-05-31
 
-- **0.6.0 — macOS Keychain 의존 제거 (in-memory openssl 암호화 store)** — 백엔드를 macOS Keychain(`security` CLI)에서 단일 openssl 암호화 파일 `store.enc`로 교체. Keychain은 GUI(Aqua) 보안세션에 바인딩돼 ssh·헤드리스에서 `secret get`이 빈값을 반환했는데(`User interaction is not allowed`), 새 백엔드는 세션 무관 파일이라 Mac·mini(ssh)·linux 어디서나 동작.
+- **0.6.1 — auto-backup 실패 묵살 버그 수정 (commit 실패 → 가시 경고 + git 신원 힌트)** — `_maybe_auto_backup`이 `set`/`rotate`/`delete` 후 store.enc를 commit·push하는데, 실패 경로(cp·cd·`git add`·`git commit`)가 전부 `|| exit 1`로 **조용히 subshell만 탈출**(`) || true`가 삼킴)해 경고가 안 떴다. git push 실패만 경고하고 정작 commit 실패는 묵살 → store.enc가 로컬만 바뀌고 vault 미반영인데 사용자는 모름. 특히 git 신원(`user.email`/`user.name`) 미설정 호스트(mini 등)에서 매 `secret set`이 조용히 vault 동기 실패. 이제 모든 실패 경로가 stderr에 명시 경고를 찍고, commit 실패 시 git 신원 설정 + `secret sync` 후속 명령을 안내한다. 동작 변화 없음(여전히 non-fatal로 로컬 write는 보존) — 가시성만 추가. 백엔드를 macOS Keychain(`security` CLI)에서 단일 openssl 암호화 파일 `store.enc`로 교체. Keychain은 GUI(Aqua) 보안세션에 바인딩돼 ssh·헤드리스에서 `secret get`이 빈값을 반환했는데(`User interaction is not allowed`), 새 백엔드는 세션 무관 파일이라 Mac·mini(ssh)·linux 어디서나 동작.
   - **암호화**: `openssl enc -aes-256-cbc -pbkdf2 -salt -iter 200000`. 마스터 비밀번호는 fd(process substitution)로 전달 — argv 노출 없음.
   - **store 포맷**: 평문은 라인당 `key<TAB>base64(value)`. base64 인코딩으로 멀티라인·ssh키·텍스트 바이너리(PEM/cert) 안전.
   - **마스터 비밀번호 소스**: `$SECRET_MASTER`(env) → `~/.config/secret/master`(0600 파일) → tty 프롬프트. argv 절대 미허용. 헤드리스: `SECRET_MASTER=… secret get <key>`.
