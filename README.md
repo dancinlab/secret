@@ -1,6 +1,8 @@
 # 🔐 secret
 
-macOS Keychain-backed credential CLI. Bash, zero dependencies (uses the system `security` CLI). Entries live in a dedicated keychain file synced between Macs as an **encrypted blob through a private git repo** — independent of Apple ID, works headless / over ssh (no iCloud / TCC / Files & Folders prompts), unlocked by a user-chosen master password.
+Encrypted-file credential CLI. Bash, near-zero dependencies (`openssl` + `base64`). Secrets live in a single openssl-encrypted file (`store.enc`) inside a private git checkout, decrypted **in-memory** with a master password. **No macOS Keychain, no GUI security session** — works headless / over ssh / on linux. The encrypted store syncs between devices as ciphertext through a private git repo, unlocked everywhere by the same master password.
+
+> **0.6.0 — macOS Keychain-free.** Earlier versions stored secrets in the macOS Keychain via the `security` CLI, which is bound to the GUI (Aqua) security session and returns empty over ssh / headless (`User interaction is not allowed`). The new backend is a session-independent encrypted file, so `secret get` works anywhere. See [Migrating](#migrating-from-the-keychain-backend).
 
 ## Install
 
@@ -14,21 +16,19 @@ hx install secret
 
 `hx` wires the `secret` shim into `~/.hx/bin/` (must be on PATH).
 
-Then set up the primary location (one-time per device):
+Then set up the store location (one-time per device):
 
 ```
-secret init github https://github.com/<owner>/<repo>.git  # primary inside a private git checkout
-# (prompts TWICE for the master password — use the SAME one on every device)
+secret init github https://github.com/<owner>/<repo>.git  # store.enc inside a private git checkout
 ```
 
-Auto-push is ON by default once the primary is a git checkout — every `set` / `rotate` / `delete` commits + pushes the encrypted blob. Optionally add a second mirror remote:
+The **master password** is the sole decryption secret — use the SAME one on every device. It is never stored by the tool; supply it via (in priority order):
 
-```
-secret backup enable https://github.com/<owner>/<mirror>.git
-secret backup                                  # initial push
-# Opt out for a single call:  SECRET_BACKUP_AUTO=0 secret set ...
-# Permanent opt-out:           secret backup disable
-```
+1. `$SECRET_MASTER` env var — headless / ssh / CI
+2. `~/.config/secret/master` — a `0600` file (trailing newline stripped)
+3. tty prompt — interactive
+
+`argv` is **never** accepted for the master password.
 
 ## Use
 
@@ -41,12 +41,17 @@ secret list
 secret delete github_token
 ```
 
-Value omitted → hidden prompt:
+Headless (ssh / CI) — pass the master password via env:
 
 ```
-$ secret set openai_key
-value for openai_key: ******
-stored: openai_key (service=dancinlab.secret)
+SECRET_MASTER="$PW" secret get github_token
+```
+
+Value omitted on a tty → hidden prompt. Value piped on stdin → the WHOLE stdin is read (multiline / ssh-key safe):
+
+```
+cat ~/.ssh/id_ed25519 | secret set ssh_key      # multiline value, stored intact
+secret get ssh_key > id_ed25519                  # byte-identical roundtrip
 ```
 
 Compose:
@@ -65,7 +70,6 @@ Wallet-grade secrets are auto-detected on `secret set` and **refused by default*
 | 12 / 15 / 18 / 21 / 24 lowercase a-z words (single-space) | BIP39 mnemonic |
 | `xprv` / `xpub` / `yprv` / `ypub` / `zprv` / `zpub` + base58 (~111c) | extended key |
 | `5` / `K` / `L` + 51-52 chars base58 | WIF private key |
-| `(0x)?` + 64 hex | Ethereum-style private key |
 
 Override requires BOTH:
 1. `--allow-mnemonic` flag (explicit consent)
@@ -74,7 +78,6 @@ Override requires BOTH:
 ```
 # tty prompt (hidden):
 secret set hot_wallet --allow-mnemonic
-value for hot_wallet: …
 
 # pipe:
 cat words.txt | secret set hot_wallet --allow-mnemonic
@@ -83,7 +86,7 @@ cat words.txt | secret set hot_wallet --allow-mnemonic
 secret set wallet --allow-mnemonic "abandon ability able …"
 ```
 
-**BIP39 mnemonic detection** — validates against the bundled canonical BIP39 English wordlist (`data/bip39_english.txt`, 2048 words). A random 12-word English sentence (words NOT in the wordlist) is NOT flagged. If the wordlist file is missing, falls back to the lowercase-words heuristic.
+**BIP39 mnemonic detection** validates against the bundled canonical BIP39 English wordlist (`data/bip39_english.txt`, 2048 words); falls back to a lowercase-words heuristic if the file is missing. Bare 64-hex (SHA-256 / R2 key / HMAC / ETH privkey) → **WARN**, stored.
 
 ## Rotate (random + replace)
 
@@ -91,48 +94,38 @@ secret set wallet --allow-mnemonic "abandon ability able …"
 secret rotate <key> [--bytes N | --hex N]
 ```
 
-- `--bytes N` (default 32) → N random bytes from `/dev/urandom`, base64-encoded.
+- `--bytes N` (default 32) → N random bytes, base64-encoded.
 - `--hex N` → N hex chars (N must be even).
-- The new value is **never printed** — only a sentinel (`rotated: <key> …`) is emitted. Read via `secret get <key>`.
-
-```
-$ secret rotate session_key --bytes 64
-rotated: session_key (service=dancinlab.secret, mode=bytes, n=64) — read via `secret get session_key`
-```
+- The new value is **never printed** — read it via `secret get <key>`.
 
 ## Check (existence, no value print)
 
 ```
 secret check <key>          # exit 0 if exists, 1 otherwise
-```
-
-```
 secret check github_token && echo present
 ```
-
-## TTY guard
-
-A trap restores `stty echo` on `EXIT`, `INT`, `TERM` — interrupting a hidden prompt won't leave the terminal in `-echo` state.
 
 ## Storage
 
 | | |
 |---|---|
-| Backend       | **macOS Keychain** via `security` CLI |
-| Service       | `$SECRET_SERVICE` (default: `dancinlab.secret`) |
-| Item key      | the `<key>` argument |
-| Keychain file | `$SECRET_KEYCHAIN` (default: `~/Library/Keychains/dancinlab.keychain-db`, a symlink to the actual file) |
-| Encryption    | macOS Keychain format — file is encrypted at rest with the user-chosen master password |
+| Backend     | single openssl-encrypted file `store.enc` |
+| Encryption  | `openssl enc -aes-256-cbc -pbkdf2 -salt -iter 200000`, password via fd (never argv) |
+| Decryption  | in-memory only — plaintext is never written to disk |
+| Store format | one line per entry: `<key><TAB>base64(value)` (multiline / binary-text safe) |
+| Service     | `$SECRET_SERVICE` (default: `dancinlab.secret`) |
+| Store path  | `$SECRET_GITHUB_PATH/store.enc` (default: `~/.local/share/secret/store.enc`) |
+| Master pw   | `$SECRET_MASTER` → `~/.config/secret/master` (0600) → tty |
 
-The keychain file is **encrypted at rest**. Git carries that encrypted blob as-is — no second crypto layer required.
+The plaintext store is **never** written to disk: `set` = decrypt-in-memory → modify → re-encrypt → atomic write of the ciphertext (`mktemp .store.enc.* → mv`). Values are base64-encoded so embedded newlines / tabs / binary-text (ssh keys, PEM, certs) stay line-safe.
 
 ## Sync — private git repo
 
-### Primary — keychain file inside a git checkout
+### Store location
 ```
 secret init github https://github.com/<owner>/<repo>.git
 ```
-File lives inside the checkout (default `~/.local/share/secret/`, `$SECRET_GITHUB_PATH` override). Every `set` / `rotate` / `delete` commits + pushes the encrypted blob. Each device unlocks with the **same master password**. The repo MUST be private.
+`store.enc` lives inside the checkout (default `~/.local/share/secret/`, `$SECRET_GITHUB_PATH` override). Every `set` / `rotate` / `delete` commits + pushes the encrypted store. Each device unlocks with the **same master password**. The repo MUST be private.
 
 ### Optional second mirror
 ```
@@ -141,53 +134,34 @@ secret backup                          # manual push
 secret backup status                   # show config + state
 secret backup disable                  # stop mirroring (clone kept)
 ```
-Default local clone: `~/.local/share/secret-archive/`. The mirror file is a byte-for-byte copy of the same encrypted blob — a second recovery channel in case the primary repo is lost.
+Default local clone: `~/.local/share/secret-archive/`. The mirror is a byte-for-byte copy of the same `store.enc` — a second recovery channel.
 
-**Auto-push is ON by default** once a git backup target is configured. Push failures print a warning but never block the local write — run `secret sync` later to catch up.
+**Auto-push is ON by default** once a git target is configured. Push failures print a warning but never block the local write — run `secret sync` later to catch up.
 - Opt out for a single call: `SECRET_BACKUP_AUTO=0 secret set …`
-- Permanent opt-out: `secret backup disable` (removes the mirror config; clone is preserved)
+- Permanent opt-out: `secret backup disable`
 
 ### Cross-device restore
-On a new Mac, after `secret init github <url>`:
+On a new device, after `secret init github <url>`:
 ```
-secret sync                            # git pull --rebase + restore primary
-```
-
-### Why not iCloud Keychain item-sync (`kSecAttrSynchronizable=true`)?
-Apple blocks programmatic iCloud Keychain access from unsigned CLI tools — `SecItemAdd` with `kSecAttrSynchronizable=true` returns `errSecMissingEntitlement` (`-34018`) without a provisioning profile. File-level sync through git sidesteps that constraint entirely.
-
-## Why Keychain over files
-
-- Encrypted at rest (`security` CLI manages it; the file is an encrypted blob)
-- One self-contained file = a single artifact to sync via git
-- `security` CLI is built into macOS — no extra install
-- Master password independent of Apple ID — neither Apple ID nor GitHub compromise alone exposes secrets
-
-## Migrating from a previous install
-
-If you used `secret` before the dedicated-keychain layout (entries lived in the default login keychain), copy them into the dedicated keychain with:
-
-```
-secret migrate                             # dry-run (read-only — shows what would copy)
-secret migrate --apply                     # actually copy
-secret migrate --apply --purge-source      # then delete originals from login keychain
+secret sync                            # git pull --rebase + push
 ```
 
-`secret migrate` reads each entry from the default keychain, writes it to `$SECRET_KEYCHAIN`, and verifies the round-trip before reporting `ok`. Use `--purge-source` only after the verified copies look correct.
+## Migrating from the Keychain backend
+
+Versions ≤ 0.5.0 stored secrets in the macOS Keychain. To import those entries into the new encrypted store, run **on the Mac, from Terminal.app** (NOT over ssh — keychain reads need a GUI security session):
+
+```
+secret migrate --from-keychain                 # import every entry (service=$SECRET_SERVICE)
+secret migrate --from-keychain --purge-source  # import, then delete originals from the keychain
+```
+
+Each entry is read from `$SECRET_KEYCHAIN` (default `~/Library/Keychains/dancinlab.keychain-db`), written into `store.enc`, and round-trip-verified before reporting `ok`. The legacy keychain file is left in place as a rollback safety net (delete it manually once the migration is verified).
 
 ## Namespacing
 
-`$SECRET_SERVICE` partitions the entries. Use it to separate contexts:
-
-```
-SECRET_SERVICE=personal secret set ...
-SECRET_SERVICE=work     secret set ...
-SECRET_SERVICE=ci-bot   secret set ...
-```
-
-`secret list` shows only the active service's entries.
+`$SECRET_SERVICE` partitions entries by context. Note: each service maps to its own `store.enc` only insofar as `$SECRET_GITHUB_PATH` differs — within one store, keys are flat; use distinct stores (`$SECRET_GITHUB_PATH`) for hard isolation.
 
 ## Limitations
 
-- **macOS-only** (uses `security` CLI). For cross-platform, consider 1Password CLI (`op`) / Bitwarden CLI (`bw`).
-- The `list` verb relies on `security dump-keychain` (slow on huge keychains) — fine for typical secret counts.
+- **NUL bytes** in a value cannot survive (a bash variable cannot hold `\0`). Text secrets — tokens, ssh keys, PEM, certs, multiline configs — are safe; truly arbitrary binary blobs with embedded NUL are not.
+- Requires `openssl` and `base64` (present on macOS and Linux).
