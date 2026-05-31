@@ -1,0 +1,96 @@
+// install.hexa — hx install hook for secret
+//
+// Invoked by `hx install secret` (or `hx update secret`) with env:
+//   HX_PKG_DIR  — secret checkout dir
+//   HX_BIN_DIR  — ~/.hx/bin
+//   HX_PKG_NAME — "secret"
+//
+// secret is a single self-contained bash script (bin/secret) — NO compile,
+// NO vendored toolchain, NO app bundle. The only install work is to ensure
+// bin/secret is executable. After this hook runs, hx reads the registry entry
+// "bin/secret" and symlinks $HX_BIN_DIR/secret → $HX_PKG_DIR/bin/secret, so
+// `secret` is on PATH from any shell.
+//
+// The hook's real job is determinism: pin every clone to the LATEST release
+// tag (tag-pinned self-update) so `hx install secret` installs the same
+// released script everywhere. Disable with SECRET_NO_SELF_UPDATE=1
+// (offline / dev escape hatch).
+
+fn have(cmd: string) -> bool {
+    let r = to_string(exec("command -v " + cmd + " 2>/dev/null")).trim()
+    return r != ""
+}
+
+fn path_exists(p: string) -> bool {
+    let r = to_string(exec("test -e '" + p + "' && echo y || echo n")).trim()
+    return r == "y"
+}
+
+fn dir_exists(p: string) -> bool {
+    let r = to_string(exec("test -d '" + p + "' && echo y || echo n")).trim()
+    return r == "y"
+}
+
+fn run_or_die(cmd: string) {
+    let result = exec_with_status(cmd)
+    if result[1] != 0 {
+        eprintln("FAILED: " + cmd)
+        exit(1)
+    }
+}
+
+fn main() {
+    let pkg_dir_raw = env("HX_PKG_DIR")
+    let pkg_dir = if pkg_dir_raw != "" { pkg_dir_raw } else { to_string(exec("pwd")).trim() }
+
+    // 기본 브랜치를 동적으로 감지 (하드코딩 금지) — origin/HEAD가 가리키는 브랜치.
+    // start-block(self-update)과 end-block(restore) 양쪽에서 읽도록 outer-scope.
+    let defbranch = to_string(exec("cd '" + pkg_dir + "' && git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@'")).trim()
+    let defb = if defbranch != "" { defbranch } else { "main" }
+
+    // ── SELF-UPDATE (tag-pinned, bootstrap-safe) ──
+    // 모두가 동일한 "최신 릴리스 태그" 스크립트로 수렴하도록 클론을 self-update.
+    // bootstrap-safe: 먼저 기본 브랜치로 self-heal(가장 신선한 install.hexa 로직 로드)
+    // → 그 다음 최신 v* 태그를 detach-checkout 하여 그 정확한 릴리스를 설치.
+    // SECRET_NO_SELF_UPDATE=1 로 통째로 비활성화 가능(오프라인/dev 탈출구).
+    if env("SECRET_NO_SELF_UPDATE") != "1" && have("git") && dir_exists(pkg_dir + "/.git") {
+        run_or_die("cd '" + pkg_dir + "' && git fetch --tags --force origin 2>&1 | tail -2")
+        run_or_die("cd '" + pkg_dir + "' && git fetch origin 2>&1 | tail -2")
+        // dirty tree → WIP 보호용 stash 먼저.
+        if to_string(exec("cd '" + pkg_dir + "' && git status --porcelain")).trim() != "" {
+            println("🔐 secret: 작업 트리에 변경사항 있음 — self-update 전 git stash (secret-selfupdate-autostash)")
+            exec("cd '" + pkg_dir + "' && git stash push -u -m secret-selfupdate-autostash 2>&1 | tail -1")
+        }
+        run_or_die("cd '" + pkg_dir + "' && git checkout " + defb + " 2>&1 | tail -1")
+        run_or_die("cd '" + pkg_dir + "' && git reset --hard origin/" + defb + " 2>&1 | tail -1")
+        // 최신 v* 태그 선택 (semver 내림차순 → head -1).
+        let tag = to_string(exec("cd '" + pkg_dir + "' && git tag --list 'v*' --sort=-v:refname | head -1")).trim()
+        if tag != "" {
+            println("🔐 secret: installing release tag " + tag)
+            run_or_die("cd '" + pkg_dir + "' && git checkout --detach " + tag + " 2>&1 | tail -1")
+        } else {
+            println("🔐 secret: 태그 없음 — " + defb + " head 설치 (no release tag yet)")
+        }
+    }
+
+    // ── INSTALL ──
+    // 컴파일 없음: bin/secret 은 자기완결적 bash 스크립트. 실행 비트만 보장하면
+    // hx 가 $HX_BIN_DIR/secret → pkg_dir/bin/secret 로 심링크한다.
+    let script = pkg_dir + "/bin/secret"
+    if !path_exists(script) {
+        eprintln("expected " + script + " but it is missing — broken checkout?")
+        exit(1)
+    }
+    run_or_die("chmod +x '" + script + "'")
+    println("🔐 secret: chmod +x " + script)
+    println("🔐 secret: install complete — hx will symlink $HX_BIN_DIR/secret → " + script)
+
+    // ── RESTORE (self-update 종료 복원) ──
+    // detach 상태(설치한 태그)에서 기본 브랜치로 되돌려, 다음 실행에서 다시
+    // 브랜치의 self-update 로직이 돌도록 한다. 주의: 이 복원은 detach된 태그본이어도
+    // "메모리에 로드된 브랜치본" install.hexa에서 실행된다 — 이는 의도된 동작이며,
+    // self-update가 실행 간에 살아있게 유지하는 핵심이다.
+    if env("SECRET_NO_SELF_UPDATE") != "1" && have("git") && dir_exists(pkg_dir + "/.git") {
+        exec("cd '" + pkg_dir + "' && git checkout " + defb + " 2>&1 | tail -1")
+    }
+}
