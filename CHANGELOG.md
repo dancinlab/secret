@@ -6,6 +6,15 @@ For the full audit trail, see `git log`.
 
 ---
 
+## 2026-06-15
+
+- **chore(harness): perfect harness setup** — Brought the repo to full `dancinlab/harness` (harness-hardcore) conformance.
+  - **ARCHITECTURE.md** rewritten as the real update-in-place SSOT (overview · component map of the single `bin/secret` bash script + subcommands + encrypted-file backend · set/get → openssl → store.enc data flow · governance). Replaces the stub.
+  - **CLAUDE.md** converted from a symlink (pointed outside the repo) into a harness-standard markdown guide — H1 + project blurb + `## Structure` tree + governance summary + `## Harness` + Quick reference. The machine-readable directives are preserved in `project.tape`.
+  - **harness.config.json** — `stack` → generic (single bash script), `verify` → `bash -n bin/secret` syntax check, `lockdown.files` → `bin/secret` (credential core), changelog trigger scoped to the core script, `protectedBranches` [main, master], added the `docs` block (architecture/log/scratchDir/scopeDirs/allow).
+  - **`.harness-engine`** submodule bumped to the latest `harness-hardcore` engine.
+  - `harness docs check` → `docs: ok`; `harness verify` → 1/1 passed; CLAUDE-MD violations 0.
+
 ## 2026-05-31
 
 - **0.6.1 — auto-backup 실패 묵살 버그 수정 (commit 실패 → 가시 경고 + git 신원 힌트)** — `_maybe_auto_backup`이 `set`/`rotate`/`delete` 후 store.enc를 commit·push하는데, 실패 경로(cp·cd·`git add`·`git commit`)가 전부 `|| exit 1`로 **조용히 subshell만 탈출**(`) || true`가 삼킴)해 경고가 안 떴다. git push 실패만 경고하고 정작 commit 실패는 묵살 → store.enc가 로컬만 바뀌고 vault 미반영인데 사용자는 모름. 특히 git 신원(`user.email`/`user.name`) 미설정 호스트(mini 등)에서 매 `secret set`이 조용히 vault 동기 실패. 이제 모든 실패 경로가 stderr에 명시 경고를 찍고, commit 실패 시 git 신원 설정 + `secret sync` 후속 명령을 안내한다. 동작 변화 없음(여전히 non-fatal로 로컬 write는 보존) — 가시성만 추가. 백엔드를 macOS Keychain(`security` CLI)에서 단일 openssl 암호화 파일 `store.enc`로 교체. Keychain은 GUI(Aqua) 보안세션에 바인딩돼 ssh·헤드리스에서 `secret get`이 빈값을 반환했는데(`User interaction is not allowed`), 새 백엔드는 세션 무관 파일이라 Mac·mini(ssh)·linux 어디서나 동작.

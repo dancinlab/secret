@@ -1,12 +1,63 @@
-# secret — 아키텍처 (SSOT · 업데이트형)
+# secret — Architecture (SSOT · update-in-place)
 
-> 최종 아키텍처 단일 SSOT. 변경 시 이 파일을 **갱신(덮어쓰기)** 한다(추가형 아님). 이력/결정은 CHANGELOG.md.
+> Single source of truth for the final architecture. **Overwrite this file in place** on change (not append-only). History / decisions live in [CHANGELOG.md](CHANGELOG.md); governance in [CLAUDE.md](CLAUDE.md).
 
-## 개요
-(한 줄 설명)
+## Overview
 
-## 구성요소
-(컴포넌트별 역할)
+`secret` is a credential CLI implemented as **one self-contained bash script** (`bin/secret`, near-zero deps — only `openssl` + `base64`). Secrets live in a single openssl-encrypted file (`store.enc`) inside a private git checkout, decrypted **in-memory** with a master password — no plaintext ever touches disk. The encrypted store is replicated between devices as ciphertext through a private git repo and unlocked everywhere with the same master password.
 
-## 데이터 흐름
-(입력 → 처리 → 출력)
+> **Backend note (0.6.x).** Versions ≤ 0.5.0 stored secrets in the macOS Keychain via the `security` CLI, which is bound to the GUI (Aqua) security session and returns empty over ssh / headless (`User interaction is not allowed`). The current backend is a session-independent encrypted file, so `secret get` works on macOS, mini (ssh), and Linux alike. The legacy Keychain path survives only inside the one-shot `migrate --from-keychain` importer.
+
+## Component map
+
+| Component | Path | Role |
+|---|---|---|
+| Main CLI script | `bin/secret` | Single bash entrypoint — argument dispatch + every subcommand. `set -euo pipefail`, TTY-aware color, `_die` helper. |
+| Subcommand: `get` | `bin/secret` | Decrypt store in-memory → print one value to stdout (pipe-friendly). |
+| Subcommand: `set` | `bin/secret` | Decrypt → modify → re-encrypt → atomic ciphertext write. High-value (wallet) refusal + argv-leak guard. |
+| Subcommand: `rotate` | `bin/secret` | Generate random (`openssl rand`, `--bytes`/`--hex`) + store. Value **never** printed. |
+| Subcommand: `check` | `bin/secret` | Existence test — exit 0/1, no value print. |
+| Subcommand: `list`/`ls` | `bin/secret` | Enumerate keys (values withheld). |
+| Subcommand: `delete`/`rm`/`del` | `bin/secret` | Remove an entry + re-encrypt. |
+| Subcommand: `service` | `bin/secret` | Report / scope the `$SECRET_SERVICE` namespace. |
+| Subcommand: `init github` | `bin/secret` | One-time per-device setup — bind the store to a private git repo. |
+| Subcommand: `backup` / `sync` | `bin/secret` | Commit + push (`backup`) / pull --rebase + push (`sync`) the encrypted blob; optional second mirror. |
+| Subcommand: `migrate --from-keychain` | `bin/secret` | One-shot legacy importer — read old macOS Keychain entries into `store.enc` (Mac GUI session only). |
+| Encryption | `openssl` | `enc -aes-256-cbc -pbkdf2 -salt -iter 200000`; master password via fd (never argv). |
+| BIP39 wordlist | `data/bip39_english.txt` | Canonical 2048-word list backing wallet-mnemonic detection on `set`. |
+| Package manifest | `install.hexa` | `hx install secret` wiring (shim into `~/.hx/bin/`). |
+| Governance / harness | `CLAUDE.md`, `harness.config.json`, `.harness/`, `.harness-engine/` | AI-coding guardrails (lockdown, lint, docs discipline) — see [CLAUDE.md](CLAUDE.md). |
+
+## Data flow
+
+```
+secret set <key> <value>           secret get <key>
+        │                                  │
+        ▼                                  ▼
+ master password  ── $SECRET_MASTER → ~/.config/secret/master (0600) → tty
+        │                                  │
+        ▼                                  ▼
+ openssl decrypt store.enc (in-memory)  openssl decrypt store.enc (in-memory)
+        │                                  │
+        ▼                                  ▼
+ modify line  <key><TAB>base64(value)   find key → base64 -d → stdout
+        │
+        ▼
+ openssl re-encrypt → atomic write (mktemp .store.enc.* → mv)
+        │
+        ▼
+ auto git commit + push (private repo)  ── SECRET_BACKUP_AUTO=0 opts out
+```
+
+- **Input** — value via argv (low-risk), stdin (whole stream, multiline/ssh-key safe), or hidden tty prompt. argv refused for the master password and for high-value secrets.
+- **Processing** — store.enc is decrypted to memory only; plaintext is never written to disk. Entries are `<key><TAB>base64(value)`; base64 keeps newlines / tabs / text-binary line-safe.
+- **Output** — `get` prints exactly one value to stdout. `rotate` prints only a sentinel. `list` prints keys. Every mutating op optionally commits + pushes the ciphertext.
+
+## Governance
+
+All AI-assisted change is gated by the harness (`.harness-engine` submodule, `harness-hardcore` profile):
+
+- **Lockdown** — `bin/secret` (the credential core) is L0; edits require an explicit CHANGELOG/issue-tracker update in the same change (`harness.config.json` → `lockdown`).
+- **Docs discipline** — this `ARCHITECTURE.md` is the update-in-place SSOT; `CHANGELOG.md` is the append-only log; scratch output goes under `scripts/scratch/`. Separate root docs carry a quickref pointer back here (`harness docs check`).
+- **Branch protection** — `main` / `master` are protected; verification (`bash -n bin/secret` syntax check) runs before merge.
+- **Never commit a real secret value.** `.gitignore` blocks `*.token` / `*.key` / `*.pem` / `*.env` / `credentials*`; the encrypted `store.enc` lives outside this repo.

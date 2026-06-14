@@ -2,12 +2,14 @@
   "project": "secret",
   "profile": "hardcore",
   "stack": [
-    "hexa"
+    "generic"
   ],
   "lockdown": {
-    "files": [],
+    "files": [
+      "bin/secret"
+    ],
     "fromMarkdown": "CLAUDE.md",
-    "onEditReminder": "L0 file edited — update CHANGELOG + issue tracker in the same change."
+    "onEditReminder": "L0 file edited (bin/secret credential core) — update CHANGELOG.md in the same change."
   },
   "enforcementFile": ".harness/enforcement.json",
   "keywordsFile": ".harness/keywords.json",
@@ -15,9 +17,9 @@
   "verify": {
     "checks": [
       {
-        "id": "verify",
-        "cmd": "hexa verify",
-        "timeoutMs": 240000
+        "id": "syntax",
+        "cmd": "bash -n bin/secret",
+        "timeoutMs": 30000
       }
     ]
   },
@@ -25,7 +27,7 @@
     "freshnessFiles": [],
     "changelog": {
       "file": "CHANGELOG.md",
-      "triggerPattern": "\\.(hexa)$",
+      "triggerPattern": "(^|/)bin/secret$",
       "ignore": [
         "(^|/)(tests?|__tests__|spec)/",
         "\\.(test|spec)\\.[a-z]+$",
@@ -35,6 +37,24 @@
     "protectedBranches": [
       "main",
       "master"
+    ]
+  },
+  "docs": {
+    "architecture": "ARCHITECTURE.md",
+    "log": "CHANGELOG.md",
+    "scratchDir": "scripts/scratch",
+    "scopeDirs": [
+      ""
+    ],
+    "allow": [
+      "README.md",
+      "CHANGELOG.md",
+      "ARCHITECTURE.md",
+      "CLAUDE.md",
+      "AGENTS.md",
+      "LICENSE",
+      "CONTRIBUTING.md",
+      "SECURITY.md"
     ]
   },
   "guides": [
