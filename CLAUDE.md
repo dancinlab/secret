@@ -1,6 +1,6 @@
 # secret
 
-`secret` is an encrypted-file credential CLI — a single self-contained bash script (`bin/secret`, deps: `openssl` + `base64`). Secrets live in one openssl-encrypted file (`store.enc`) inside a private git checkout, decrypted in-memory with a master password, and synced between devices as ciphertext through a private git repo. Architecture SSOT: [ARCHITECTURE.md](ARCHITECTURE.md). Change history: [CHANGELOG.md](CHANGELOG.md). Machine-readable governance: [project.tape](project.tape).
+`secret` is an encrypted-file credential CLI — a single self-contained bash script (`bin/secret`, deps: `openssl` + `base64`). Secrets live in one openssl-encrypted file (`store.enc`) inside a private git checkout, decrypted in-memory with a master password, and synced between devices as ciphertext through a private git repo. Architecture SSOT: [ARCHITECTURE.md](ARCHITECTURE.md). Change history: [CHANGELOG.jsonl](CHANGELOG.jsonl). Machine-readable governance: [project.tape](project.tape).
 
 ## Structure
 
@@ -10,7 +10,7 @@ secret/
 ├─ data/bip39_english.txt  — canonical BIP39 2048-word list backing wallet-mnemonic refusal on `set`
 ├─ install.hexa            — `hx install secret` package manifest (shim into ~/.hx/bin/)
 ├─ ARCHITECTURE.md         — architecture SSOT (update-in-place)
-├─ CHANGELOG.md            — append-only change log (date-keyed)
+├─ CHANGELOG.jsonl            — append-only change log (date-keyed)
 ├─ CLAUDE.md               — this file — governance + harness entrypoint
 ├─ project.tape            — machine-readable identity + governance directives (@D s1…s7)
 ├─ LATTICE_POLICY.md       — cross-project verify-against-real-limits policy
@@ -36,7 +36,7 @@ Core security invariants (full directives in [project.tape](project.tape) `@D s1
 This repo is guarded by the `dancinlab/harness` engine (`harness-hardcore` profile) vendored as the `.harness-engine` submodule. Config: [harness.config.json](harness.config.json); rule data: `.harness/`; agent hooks: `.claude/settings.json`.
 
 - **Lockdown (L0)** — `bin/secret` is the credential core; edits require a CHANGELOG/issue-tracker update in the same change.
-- **Docs discipline** — `ARCHITECTURE.md` is the update-in-place SSOT, `CHANGELOG.md` is append-only, scratch output goes under `scripts/scratch/`. Separate root docs must carry a quickref pointer back to the SSOT (`harness docs check`).
+- **Docs discipline** — `ARCHITECTURE.md` is the update-in-place SSOT, `CHANGELOG.jsonl` is append-only, scratch output goes under `scripts/scratch/`. Separate root docs must carry a quickref pointer back to the SSOT (`harness docs check`).
 - **Verify** — `bash -n bin/secret` (syntax check) runs before merge; `main`/`master` are protected.
 
 ## Quick reference

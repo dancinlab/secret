@@ -1,6 +1,6 @@
 # secret — Architecture (SSOT · update-in-place)
 
-> Single source of truth for the final architecture. **Overwrite this file in place** on change (not append-only). History / decisions live in [CHANGELOG.md](CHANGELOG.md); governance in [CLAUDE.md](CLAUDE.md).
+> Single source of truth for the final architecture. **Overwrite this file in place** on change (not append-only). History / decisions live in [CHANGELOG.jsonl](CHANGELOG.jsonl); governance in [CLAUDE.md](CLAUDE.md).
 
 ## Overview
 
@@ -58,6 +58,6 @@ secret set <key> <value>           secret get <key>
 All AI-assisted change is gated by the harness (`.harness-engine` submodule, `harness-hardcore` profile):
 
 - **Lockdown** — `bin/secret` (the credential core) is L0; edits require an explicit CHANGELOG/issue-tracker update in the same change (`harness.config.json` → `lockdown`).
-- **Docs discipline** — this `ARCHITECTURE.md` is the update-in-place SSOT; `CHANGELOG.md` is the append-only log; scratch output goes under `scripts/scratch/`. Separate root docs carry a quickref pointer back here (`harness docs check`).
+- **Docs discipline** — this `ARCHITECTURE.md` is the update-in-place SSOT; `CHANGELOG.jsonl` is the append-only log; scratch output goes under `scripts/scratch/`. Separate root docs carry a quickref pointer back here (`harness docs check`).
 - **Branch protection** — `main` / `master` are protected; verification (`bash -n bin/secret` syntax check) runs before merge.
 - **Never commit a real secret value.** `.gitignore` blocks `*.token` / `*.key` / `*.pem` / `*.env` / `credentials*`; the encrypted `store.enc` lives outside this repo.
