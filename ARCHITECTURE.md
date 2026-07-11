@@ -51,7 +51,7 @@ secret set <key> <value>           secret get <key>
 
 - **Input** — value via argv (low-risk), stdin (whole stream, multiline/ssh-key safe), or hidden tty prompt. argv refused for the master password and for high-value secrets.
 - **Processing** — store.enc is decrypted to memory only; plaintext is never written to disk. Entries are `<key><TAB>base64(value)`; base64 keeps newlines / tabs / text-binary line-safe.
-- **Output** — `get` prints exactly one value to stdout. `rotate` prints only a sentinel. `list` prints keys. Every mutating op optionally commits + pushes the ciphertext.
+- **Output** — `get` prints exactly one value to stdout (byte-exact, no trailing newline when piped so it stays pipe-friendly; a trailing newline is added only on an interactive TTY, `[ -t 1 ]`, to suppress zsh's `%` missing-newline marker). `rotate` prints only a sentinel. `list` prints keys. Every mutating op optionally commits + pushes the ciphertext.
 
 ## Governance
 
