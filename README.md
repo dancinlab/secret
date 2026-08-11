@@ -34,7 +34,7 @@ The **master password** is the sole decryption secret — use the SAME one on ev
 
 ```
 secret set github_token ghp_xxxxxxxxxx
-secret get github_token            # → ghp_xxxxxxxxxx (stdout, pipe-friendly)
+secret get github_token            # → ghp_xxxxxxxxxx + newline (stdout)
 secret rotate session_key          # generate random + store (value NEVER printed)
 secret check github_token          # exit 0 if exists, 1 otherwise
 secret list
@@ -51,7 +51,7 @@ Value omitted on a tty → hidden prompt. Value piped on stdin → the WHOLE std
 
 ```
 cat ~/.ssh/id_ed25519 | secret set ssh_key      # multiline value, stored intact
-secret get ssh_key > id_ed25519                  # byte-identical roundtrip
+secret get ssh_key > id_ed25519                  # output always ends with newline
 ```
 
 Compose:
