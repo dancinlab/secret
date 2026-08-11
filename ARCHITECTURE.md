@@ -13,7 +13,7 @@
 | Component | Path | Role |
 |---|---|---|
 | Main CLI script | `bin/secret` | Single bash entrypoint — argument dispatch + every subcommand. `set -euo pipefail`, TTY-aware color, `_die` helper. |
-| Subcommand: `get` | `bin/secret` | Decrypt store in-memory → print one value to stdout (pipe-friendly). |
+| Subcommand: `get` | `bin/secret` | Decrypt store in-memory → print one newline-terminated value to stdout. |
 | Subcommand: `set` | `bin/secret` | Decrypt → modify → re-encrypt → atomic ciphertext write. High-value (wallet) refusal + argv-leak guard. |
 | Subcommand: `rotate` | `bin/secret` | Generate random (`openssl rand`, `--bytes`/`--hex`) + store. Value **never** printed. |
 | Subcommand: `check` | `bin/secret` | Existence test — exit 0/1, no value print. |
@@ -25,6 +25,7 @@
 | Subcommand: `migrate --from-keychain` | `bin/secret` | One-shot legacy importer — read old macOS Keychain entries into `store.enc` (Mac GUI session only). |
 | Encryption | `openssl` | `enc -aes-256-cbc -pbkdf2 -salt -iter 200000`; master password via fd (never argv). |
 | BIP39 wordlist | `data/bip39_english.txt` | Canonical 2048-word list backing wallet-mnemonic detection on `set`. |
+| `get` output regression | `tests/get-output.sh` | Byte-level check for unconditional trailing newline, multiline values, command substitution, and missing keys. |
 | Package manifest | `install.hexa` | `hx install secret` wiring (shim into `~/.hx/bin/`). |
 | Governance / harness | `CLAUDE.md`, `harness.config.json`, `.harness/`, `.harness-engine/` | AI-coding guardrails (lockdown, lint, docs discipline) — see [CLAUDE.md](CLAUDE.md). |
 
@@ -51,7 +52,7 @@ secret set <key> <value>           secret get <key>
 
 - **Input** — value via argv (low-risk), stdin (whole stream, multiline/ssh-key safe), or hidden tty prompt. argv refused for the master password and for high-value secrets.
 - **Processing** — store.enc is decrypted to memory only; plaintext is never written to disk. Entries are `<key><TAB>base64(value)`; base64 keeps newlines / tabs / text-binary line-safe.
-- **Output** — `get` prints exactly one value to stdout (byte-exact, no trailing newline when piped so it stays pipe-friendly; a trailing newline is added only on an interactive TTY, `[ -t 1 ]`, to suppress zsh's `%` missing-newline marker). `rotate` prints only a sentinel. `list` prints keys. Every mutating op optionally commits + pushes the ciphertext.
+- **Output** — the store layer decodes the value exactly, then the public `get` command always appends one trailing newline, including through pipes and redirection, matching the original Keychain-backed CLI contract. `rotate` prints only a sentinel. `list` prints keys. Every mutating op optionally commits + pushes the ciphertext.
 
 ## Governance
 
@@ -59,5 +60,5 @@ All AI-assisted change is gated by the harness (`.harness-engine` submodule, `ha
 
 - **Lockdown** — `bin/secret` (the credential core) is L0; edits require an explicit CHANGELOG/issue-tracker update in the same change (`harness.config.json` → `lockdown`).
 - **Docs discipline** — this `ARCHITECTURE.md` is the update-in-place SSOT; `CHANGELOG.jsonl` is the append-only log; scratch output goes under `scripts/scratch/`. Separate root docs carry a quickref pointer back here (`harness docs check`).
-- **Branch protection** — `main` / `master` are protected; verification (`bash -n bin/secret` syntax check) runs before merge.
+- **Branch protection** — `main` / `master` are protected; verification runs the script syntax check and byte-level `get` output regression before merge.
 - **Never commit a real secret value.** `.gitignore` blocks `*.token` / `*.key` / `*.pem` / `*.env` / `credentials*`; the encrypted `store.enc` lives outside this repo.

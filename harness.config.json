@@ -20,6 +20,11 @@
         "id": "syntax",
         "cmd": "bash -n bin/secret",
         "timeoutMs": 30000
+      },
+      {
+        "id": "get-output",
+        "cmd": "bash tests/get-output.sh",
+        "timeoutMs": 30000
       }
     ]
   },
@@ -50,6 +55,7 @@
       "README.md",
       "CHANGELOG.jsonl",
       "ARCHITECTURE.md",
+      "tests/get-output.sh",
       "CLAUDE.md",
       "AGENTS.md",
       "LICENSE",
